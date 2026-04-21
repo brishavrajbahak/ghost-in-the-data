@@ -1,0 +1,22 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+ENV PIP_DEFAULT_TIMEOUT=1200
+ENV PIP_RETRIES=10
+ENV PIP_REQUIRE_HASHES=0
+ENV PYTHONPATH=/app
+
+COPY requirements-prod.txt .
+RUN pip install --no-cache-dir --timeout 1200 --retries 10 -r requirements-prod.txt
+
+# Install CPU-only torch to avoid bundling large CUDA libraries in the production image.
+RUN pip install --no-cache-dir --timeout 1200 --retries 10 --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple torch==2.7.1
+
+COPY . .
+
+EXPOSE 8000
+
+# Gunicorn process manager with Uvicorn workers
+CMD ["gunicorn", "app.main:app", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--workers", "2", "--timeout", "120"]

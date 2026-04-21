@@ -1,0 +1,68 @@
+name: ghost-in-the-data-prod
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ghost
+      POSTGRES_PASSWORD: ghost
+      POSTGRES_DB: ghost
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ghost -d ghost"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    image: ghost-in-the-data-backend-prod
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    env_file:
+      - ./backend/.env
+    environment:
+      - PORT=8000
+      - DATABASE_URL=postgresql+asyncpg://ghost:ghost@db:5432/ghost
+      # When fronted by nginx on the same origin, this is mostly moot, but keep it strict.
+      - ALLOWED_ORIGINS=http://localhost,http://127.0.0.1
+      - LOG_FORMAT=json
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read(); print('ok')\"",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+    # docker compose ignores deploy.resources in non-swarm mode; use these instead.
+    cpus: 1.0
+    mem_limit: 1g
+
+  frontend:
+    image: ghost-in-the-data-frontend-prod
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+      args:
+        VITE_API_BASE: /api
+    ports:
+      - "8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+    cpus: 1.0
+    mem_limit: 512m
+
+volumes:
+  pg_data:
