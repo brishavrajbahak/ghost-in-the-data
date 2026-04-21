@@ -9,7 +9,6 @@ import time
 
 load_dotenv()
 
-GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 logger = logging.getLogger("ghost.narrator")
 
@@ -43,6 +42,13 @@ def _looks_like_rate_limit(err: Exception) -> bool:
     s = str(err)
     return "429" in s or "RESOURCE_EXHAUSTED" in s or "rate" in s.lower() and "limit" in s.lower()
 
+def _gemini_api_key() -> str | None:
+    # Read at call-time so tests/CI can set env vars after module import.
+    v = os.getenv("GOOGLE_API_KEY")
+    if not v or v == "your_gemini_api_key_here":
+        return None
+    return v
+
 
 async def _generate_with_backoff(client, *, model: str, contents: str, retries: int = 3) -> str:
     last_exc: Exception | None = None
@@ -64,7 +70,8 @@ async def generate_narrative(anomaly_data: Dict[str, Any], correlation_data: Lis
     """
     Generate a human-readable story about an anomaly using Gemini.
     """
-    if not GEMINI_API_KEY or GEMINI_API_KEY == "your_gemini_api_key_here":
+    api_key = _gemini_api_key()
+    if not api_key:
         return "AI Narrative generation is unavailable. Please check your API key."
 
     news_lines = ""
@@ -119,7 +126,7 @@ async def generate_narrative(anomaly_data: Dict[str, Any], correlation_data: Lis
         if cached is not None:
             return cached
 
-        client = genai.Client(api_key=GEMINI_API_KEY)
+        client = genai.Client(api_key=api_key)
         text = await _generate_with_backoff(client, model=GEMINI_MODEL, contents=prompt)
         _cache_set(cache_key, text)
         return text
@@ -137,7 +144,8 @@ async def generate_chat_reply(
     articles: List[Dict[str, Any]],
     messages: List[Dict[str, Any]],
 ) -> str:
-    if not GEMINI_API_KEY or GEMINI_API_KEY == "your_gemini_api_key_here":
+    api_key = _gemini_api_key()
+    if not api_key:
         return "AI chat is unavailable. Please check your API key."
 
     from app.services.chat_prompt import build_chat_prompt
@@ -152,7 +160,7 @@ async def generate_chat_reply(
     try:
         from google import genai
 
-        client = genai.Client(api_key=GEMINI_API_KEY)
+        client = genai.Client(api_key=api_key)
         cache_key = _make_key(
             "chat",
             {"anomaly": anomaly_data, "correlation": correlation_data, "articles": articles, "messages": messages[-12:]},
@@ -186,7 +194,8 @@ async def generate_chat_reply_agentic(
     tool_events is a list of dicts:
       { tool_name, args, result, error }
     """
-    if not GEMINI_API_KEY or GEMINI_API_KEY == "your_gemini_api_key_here":
+    api_key = _gemini_api_key()
+    if not api_key:
         return "AI chat is unavailable. Please check your API key.", []
 
     from app.services.chat_prompt import build_chat_prompt
@@ -203,7 +212,7 @@ async def generate_chat_reply_agentic(
         from google import genai
         from google.genai import types
 
-        client = genai.Client(api_key=GEMINI_API_KEY)
+        client = genai.Client(api_key=api_key)
 
         tool_decls = [
             types.FunctionDeclaration(
